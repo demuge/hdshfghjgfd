@@ -27,7 +27,7 @@ WEB_APP_URL = "https://demuge.github.io/qwet4wyh/"
 
 # Когда разместим server.py на сервере,
 # сюда поставим его настоящий HTTPS-адрес.
-API_URL = "https://ТВОЙ-SERVER-АДРЕС"
+API_URL = "https://hdshfghjgfd.onrender.com/"
 
 
 # ============================================================
