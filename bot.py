@@ -21,7 +21,7 @@ from telegram.ext import (
 # НАСТРОЙКИ
 # ============================================================
 
-BOT_TOKEN = "ВСТАВЬ_ТОКЕН_БОТА"
+BOT_TOKEN = "8746943590:AAHOgHklW3xHD6Xr7ghwqLtvveAANkmhCOw"
 
 WEB_APP_URL = "https://demuge.github.io/qwet4wyh/"
 
