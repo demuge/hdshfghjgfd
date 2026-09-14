@@ -513,6 +513,62 @@ body.orange {
 
 
 /* =========================================
+   USERNAME
+========================================= */
+
+.username-input {
+
+    width: 150px;
+
+    height: 34px;
+
+    padding:
+        0
+        10px;
+
+    border-radius: 10px;
+
+    border:
+        1px solid var(--border);
+
+    background:
+        rgba(0,0,0,.28);
+
+    color: white;
+
+    outline: none;
+
+    font-size: 11px;
+
+    font-weight: 700;
+
+    transition:
+        border .25s ease,
+        box-shadow .25s ease,
+        background .25s ease;
+}
+
+
+.username-input::placeholder {
+    color: #656570;
+}
+
+
+.username-input:focus {
+
+    border-color:
+        var(--accent);
+
+    background:
+        rgba(0,0,0,.38);
+
+    box-shadow:
+        0 0 0 3px var(--glow),
+        0 0 20px var(--glow);
+}
+
+
+/* =========================================
    LANGUAGE
 ========================================= */
 
@@ -1570,6 +1626,11 @@ body.orange {
 
         margin-top: 2px;
     }
+
+    .username-input {
+
+        width: 100%;
+    }
 }
 
 </style>
@@ -1644,6 +1705,41 @@ body.orange {
         data-i18n="settings"
     >
         Настройки
+    </div>
+
+
+    <!-- USERNAME -->
+
+    <div class="setting-row">
+
+        <div>
+
+            <div
+                class="setting-name"
+                data-i18n="username"
+            >
+                Telegram username
+            </div>
+
+            <div
+                class="setting-description"
+                data-i18n="usernameDesc"
+            >
+                Username, на который будут отправлены Stars
+            </div>
+
+        </div>
+
+
+        <input
+            id="usernameInput"
+            class="username-input"
+            type="text"
+            placeholder="@username"
+            autocomplete="off"
+            maxlength="33"
+        >
+
     </div>
 
 
@@ -2148,6 +2244,96 @@ const screen2 =
 const settingsPanel =
     document.getElementById("settingsPanel");
 
+const usernameInput =
+    document.getElementById("usernameInput");
+
+
+/* =========================================
+   USERNAME
+========================================= */
+
+function saveUsername() {
+
+    if (!usernameInput) {
+        return;
+    }
+
+
+    let username =
+        usernameInput.value.trim();
+
+
+    if (username && !username.startsWith("@")) {
+
+        username =
+            "@" + username;
+
+    }
+
+
+    usernameInput.value =
+        username;
+
+
+    localStorage.setItem(
+        "telegram_username",
+        username
+    );
+
+}
+
+
+if (usernameInput) {
+
+    const savedUsername =
+        localStorage.getItem(
+            "telegram_username"
+        );
+
+
+    if (savedUsername) {
+
+        usernameInput.value =
+            savedUsername;
+
+    }
+
+
+    usernameInput.addEventListener(
+        "input",
+        function() {
+
+            let value =
+                this.value.trim();
+
+
+            if (value && !value.startsWith("@")) {
+
+                value =
+                    "@" + value;
+
+            }
+
+
+            this.value =
+                value;
+
+            localStorage.setItem(
+                "telegram_username",
+                value
+            );
+
+        }
+    );
+
+
+    usernameInput.addEventListener(
+        "blur",
+        saveUsername
+    );
+
+}
+
 
 /* =========================================
    AMOUNT
@@ -2390,6 +2576,12 @@ const translations = {
         settings:
             "Настройки",
 
+        username:
+            "Telegram username",
+
+        usernameDesc:
+            "Username, на который будут отправлены Stars",
+
         language:
             "Язык",
 
@@ -2461,6 +2653,12 @@ const translations = {
         settings:
             "Settings",
 
+        username:
+            "Telegram username",
+
+        usernameDesc:
+            "Username where the Stars will be sent",
+
         language:
             "Language",
 
@@ -2531,6 +2729,12 @@ const translations = {
 
         settings:
             "Налаштування",
+
+        username:
+            "Telegram username",
+
+        usernameDesc:
+            "Username, на який будуть відправлені Stars",
 
         language:
             "Мова",
