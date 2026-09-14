@@ -1,217 +1,201 @@
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel, Field
-from uuid import uuid4
+import os
+import uuid
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from typing import Optional
+
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+
+from bot import start_bot, stop_bot
 
 
-# =========================================================
-# APP
-# =========================================================
-
-app = FastAPI(
-    title="Telegram Stars Shop",
-    version="1.0.0",
-)
-
-
-# =========================================================
+# =========================
 # НАСТРОЙКИ
-# =========================================================
+# =========================
 
 PRICE_PER_STAR = 0.90
 
-MIN_STARS = 1
-MAX_STARS = 1_000_000
 
-
-# =========================================================
-# ВРЕМЕННОЕ ХРАНИЛИЩЕ
-# =========================================================
+# =========================
+# ДАННЫЕ ЗАКАЗОВ
+# =========================
 
 orders = {}
 
 
-# =========================================================
-# МОДЕЛИ
-# =========================================================
-
-class CreateOrderRequest(BaseModel):
-
-    telegram_id: int
-
-    username: Optional[str] = None
-
-    stars: int = Field(
-        ge=MIN_STARS,
-        le=MAX_STARS
-    )
-
-
-class OrderResponse(BaseModel):
-
-    order_id: str
-
-    telegram_id: int
-
-    username: Optional[str]
-
+class OrderCreate(BaseModel):
+    username: str
     stars: int
 
-    amount_uah: float
 
-    status: str
+# =========================
+# ЗАПУСК БОТА + СЕРВЕРА
+# =========================
 
-    created_at: str
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    print("Starting Telegram bot...")
+    await start_bot()
+
+    print("Server started")
+
+    yield
+
+    print("Stopping Telegram bot...")
+    await stop_bot()
 
 
-# =========================================================
+app = FastAPI(
+    title="Telegram Stars Shop",
+    lifespan=lifespan
+)
+
+
+# =========================
 # ГЛАВНАЯ
-# =========================================================
+# =========================
 
 @app.get("/")
 async def root():
-
     return {
-        "success": True,
-        "service": "Telegram Stars Shop",
-        "status": "online",
+        "status": "ok",
+        "service": "Telegram Stars Shop"
     }
 
 
-# =========================================================
+# =========================
 # HEALTH CHECK
-# =========================================================
+# =========================
 
 @app.get("/health")
 async def health():
-
     return {
         "status": "ok"
     }
 
 
-# =========================================================
+# =========================
 # СОЗДАНИЕ ЗАКАЗА
-# =========================================================
+# =========================
 
-@app.post(
-    "/api/order",
-    response_model=OrderResponse
-)
-async def create_order(
-    data: CreateOrderRequest
-):
+@app.post("/api/order")
+async def create_order(order: OrderCreate):
 
-    amount_uah = round(
-        data.stars * PRICE_PER_STAR,
-        2
-    )
+    username = order.username.strip().lstrip("@")
 
-    order_id = str(uuid4())
+    if not username:
+        raise HTTPException(
+            status_code=400,
+            detail="Username is required"
+        )
 
-    created_at = datetime.now(
-        timezone.utc
-    ).isoformat()
+    if order.stars < 1:
+        raise HTTPException(
+            status_code=400,
+            detail="Stars must be greater than 0"
+        )
 
-    order = {
-        "order_id": order_id,
-        "telegram_id": data.telegram_id,
-        "username": data.username,
-        "stars": data.stars,
-        "amount_uah": amount_uah,
+    if order.stars > 1_000_000:
+        raise HTTPException(
+            status_code=400,
+            detail="Too many Stars"
+        )
+
+    amount = round(order.stars * PRICE_PER_STAR, 2)
+
+    order_id = str(uuid.uuid4())
+
+    orders[order_id] = {
+        "id": order_id,
+        "username": username,
+        "stars": order.stars,
+        "amount": amount,
+        "currency": "UAH",
         "status": "waiting_payment",
-        "created_at": created_at,
+        "created_at": datetime.now(timezone.utc).isoformat()
     }
 
-    orders[order_id] = order
-
-    return order
-
-
-# =========================================================
-# ПОЛУЧЕНИЕ ЗАКАЗА
-# =========================================================
-
-@app.get(
-    "/api/order/{order_id}",
-    response_model=OrderResponse
-)
-async def get_order(order_id: str):
-
-    order = orders.get(order_id)
-
-    if order is None:
-        raise HTTPException(
-            status_code=404,
-            detail="Заказ не найден."
-        )
-
-    return order
-
-
-# =========================================================
-# ПРОВЕРКА ОПЛАТЫ
-# =========================================================
-
-@app.post(
-    "/api/order/{order_id}/check"
-)
-async def check_payment(order_id: str):
-
-    order = orders.get(order_id)
-
-    if order is None:
-        raise HTTPException(
-            status_code=404,
-            detail="Заказ не найден."
-        )
-
-    # =====================================================
-    # ВАЖНО:
-    # Здесь пока НЕТ фальшивого подтверждения оплаты.
-    #
-    # Следующим этапом сюда подключим реальный
-    # платёжный провайдер и проверку конкретного заказа.
-    # =====================================================
+    print(
+        f"New order: {order_id} | "
+        f"@{username} | "
+        f"{order.stars} Stars | "
+        f"{amount} UAH"
+    )
 
     return {
         "success": True,
         "order_id": order_id,
-        "status": order["status"],
-        "paid": False,
-        "message": "Платёж ещё не подтверждён.",
+        "username": username,
+        "stars": order.stars,
+        "amount": amount,
+        "currency": "UAH",
+        "status": "waiting_payment"
     }
 
 
-# =========================================================
-# ОТМЕНА ЗАКАЗА
-# =========================================================
+# =========================
+# ПОЛУЧИТЬ ЗАКАЗ
+# =========================
 
-@app.post(
-    "/api/order/{order_id}/cancel"
-)
+@app.get("/api/order/{order_id}")
+async def get_order(order_id: str):
+
+    order = orders.get(order_id)
+
+    if not order:
+        raise HTTPException(
+            status_code=404,
+            detail="Order not found"
+        )
+
+    return order
+
+
+# =========================
+# ПРОВЕРКА ОПЛАТЫ
+# =========================
+
+@app.post("/api/order/{order_id}/check")
+async def check_order(order_id: str):
+
+    order = orders.get(order_id)
+
+    if not order:
+        raise HTTPException(
+            status_code=404,
+            detail="Order not found"
+        )
+
+    # Пока реальная проверка оплаты НЕ подключена.
+    # Поэтому здесь ничего не подтверждаем автоматически.
+
+    return {
+        "success": True,
+        "paid": order["status"] == "paid",
+        "status": order["status"],
+        "order_id": order_id
+    }
+
+
+# =========================
+# ОТМЕНА ЗАКАЗА
+# =========================
+
+@app.post("/api/order/{order_id}/cancel")
 async def cancel_order(order_id: str):
 
     order = orders.get(order_id)
 
-    if order is None:
+    if not order:
         raise HTTPException(
             status_code=404,
-            detail="Заказ не найден."
+            detail="Order not found"
         )
-
-    if order["status"] != "waiting_payment":
-
-        return {
-            "success": False,
-            "message": "Этот заказ уже нельзя отменить.",
-        }
 
     order["status"] = "cancelled"
 
     return {
         "success": True,
-        "order_id": order_id,
         "status": "cancelled",
+        "order_id": order_id
     }
