@@ -1,6 +1,4 @@
-import logging
 import os
-
 import httpx
 
 from telegram import (
@@ -9,137 +7,105 @@ from telegram import (
     InlineKeyboardMarkup,
     WebAppInfo,
 )
+
 from telegram.ext import (
     Application,
     CommandHandler,
     ContextTypes,
-    MessageHandler,
-    filters,
 )
 
-# ============================================================
+
+# =========================
 # НАСТРОЙКИ
-# ============================================================
+# =========================
 
-BOT_TOKEN = "8746943590:AAHOgHklW3xHD6Xr7ghwqLtvveAANkmhCOw"
+BOT_TOKEN = os.getenv("BOT_TOKEN")
 
-WEB_APP_URL = "https://demuge.github.io/qwet4wyh/"
-
-# Когда разместим server.py на сервере,
-# сюда поставим его настоящий HTTPS-адрес.
-API_URL = "https://hdshfghjgfd.onrender.com/"
-
-
-# ============================================================
-# ЛОГИ
-# ============================================================
-
-logging.basicConfig(
-    format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
-    level=logging.INFO,
+WEB_APP_URL = os.getenv(
+    "WEB_APP_URL",
+    "https://demuge.github.io/qwet4wyh/"
 )
 
-logger = logging.getLogger(__name__)
+API_URL = os.getenv("API_URL", "").rstrip("/")
 
 
-# ============================================================
-# КЛАВИАТУРА
-# ============================================================
+if not BOT_TOKEN:
+    raise RuntimeError(
+        "BOT_TOKEN environment variable is not set"
+    )
 
-def shop_keyboard():
-    return InlineKeyboardMarkup(
+
+# =========================
+# TELEGRAM BOT
+# =========================
+
+application = Application.builder().token(BOT_TOKEN).build()
+
+
+# =========================
+# /START
+# =========================
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    keyboard = [
         [
-            [
-                InlineKeyboardButton(
-                    "⭐ Купить Stars",
-                    web_app=WebAppInfo(
-                        url=WEB_APP_URL
-                    ),
-                )
-            ]
+            InlineKeyboardButton(
+                text="⭐ Купить Stars",
+                web_app=WebAppInfo(url=WEB_APP_URL)
+            )
         ]
-    )
+    ]
 
-
-# ============================================================
-# /start
-# ============================================================
-
-async def start(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
-
-    user = update.effective_user
-
-    if not user:
-        return
-
-    username = (
-        f"@{user.username}"
-        if user.username
-        else user.first_name
-    )
-
-    text = (
-        "⭐ <b>Магазин Telegram Stars</b>\n\n"
-        f"Привет, {username}!\n\n"
-        "Здесь ты можешь выбрать нужное "
-        "количество Stars и оформить заказ.\n\n"
-        "Нажми кнопку ниже 👇"
-    )
+    reply_markup = InlineKeyboardMarkup(keyboard)
 
     await update.message.reply_text(
-        text,
-        parse_mode="HTML",
-        reply_markup=shop_keyboard(),
+        "⭐ Добро пожаловать!\n\n"
+        "Здесь ты можешь купить Telegram Stars.\n\n"
+        "Нажми кнопку ниже, чтобы открыть магазин.",
+        reply_markup=reply_markup
     )
 
 
-# ============================================================
-# /shop
-# ============================================================
+# =========================
+# /SHOP
+# =========================
 
-async def shop(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
+async def shop(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    keyboard = [
+        [
+            InlineKeyboardButton(
+                text="⭐ Открыть магазин",
+                web_app=WebAppInfo(url=WEB_APP_URL)
+            )
+        ]
+    ]
 
     await update.message.reply_text(
         "⭐ Открывай магазин:",
-        reply_markup=shop_keyboard(),
+        reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
 
-# ============================================================
-# /id
-# ============================================================
+# =========================
+# /ID
+# =========================
 
-async def user_id(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
-
-    user = update.effective_user
-
-    if not user:
-        return
+async def get_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(
-        f"🆔 Твой Telegram ID:\n\n"
-        f"<code>{user.id}</code>",
-        parse_mode="HTML",
+        f"Твой Telegram ID:\n\n"
+        f"`{update.effective_user.id}`",
+        parse_mode="Markdown"
     )
 
 
-# ============================================================
-# /status
-# ============================================================
+# =========================
+# /STATUS
+# =========================
 
-async def status(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
+async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not context.args:
         await update.message.reply_text(
@@ -150,173 +116,138 @@ async def status(
 
     order_id = context.args[0]
 
-    if API_URL.startswith("https://ТВОЙ"):
+    if not API_URL:
         await update.message.reply_text(
-            "⚠️ Backend ещё не подключён."
+            "API_URL ещё не настроен."
         )
         return
 
-    url = (
-        f"{API_URL.rstrip('/')}"
-        f"/api/order/{order_id}"
-    )
-
     try:
 
-        async with httpx.AsyncClient(
-            timeout=10
-        ) as client:
+        async with httpx.AsyncClient(timeout=10) as client:
 
-            response = await client.get(url)
+            response = await client.get(
+                f"{API_URL}/api/order/{order_id}"
+            )
 
         if response.status_code == 404:
             await update.message.reply_text(
-                "❌ Заказ не найден."
+                "Заказ не найден."
             )
             return
 
-        if response.status_code != 200:
-            await update.message.reply_text(
-                "⚠️ Не удалось получить статус заказа."
-            )
-            return
+        response.raise_for_status()
 
         data = response.json()
 
-        stars = data.get("stars", 0)
-        amount = data.get("amount_uah", 0)
-        order_status = data.get(
-            "status",
-            "unknown"
+        await update.message.reply_text(
+            f"Заказ: `{data['id']}`\n"
+            f"Username: @{data['username']}\n"
+            f"Stars: {data['stars']} ⭐\n"
+            f"Сумма: {data['amount']} {data['currency']}\n"
+            f"Статус: {data['status']}",
+            parse_mode="Markdown"
         )
+
+    except Exception as e:
+
+        print(f"Status error: {e}")
 
         await update.message.reply_text(
-            "📦 <b>Заказ</b>\n\n"
-            f"ID: <code>{order_id}</code>\n"
-            f"⭐ Stars: <b>{stars}</b>\n"
-            f"💰 Сумма: <b>{amount} грн</b>\n"
-            f"📌 Статус: <b>{order_status}</b>",
-            parse_mode="HTML",
-        )
-
-    except Exception:
-
-        logger.exception(
-            "Ошибка получения заказа"
-        )
-
-        await update.message.reply_text(
-            "❌ Backend сейчас недоступен."
+            "Не удалось получить статус заказа."
         )
 
 
-# ============================================================
-# НЕИЗВЕСТНЫЕ КОМАНДЫ
-# ============================================================
+# =========================
+# КОМАНДЫ
+# =========================
 
-async def unknown_command(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
+application.add_handler(
+    CommandHandler("start", start)
+)
 
-    await update.message.reply_text(
-        "❓ Неизвестная команда.\n\n"
-        "Используй /start."
+application.add_handler(
+    CommandHandler("shop", shop)
+)
+
+application.add_handler(
+    CommandHandler("id", get_id)
+)
+
+application.add_handler(
+    CommandHandler("status", status)
+)
+
+
+# =========================
+# ЗАПУСК БОТА
+# =========================
+
+_bot_started = False
+
+
+async def start_bot():
+
+    global _bot_started
+
+    if _bot_started:
+        return
+
+    print("Initializing Telegram bot...")
+
+    await application.initialize()
+
+    await application.start()
+
+    await application.updater.start_polling(
+        drop_pending_updates=True
     )
 
+    _bot_started = True
 
-# ============================================================
-# ОШИБКИ
-# ============================================================
-
-async def error_handler(
-    update: object,
-    context: ContextTypes.DEFAULT_TYPE,
-):
-
-    logger.error(
-        "Ошибка Telegram:",
-        exc_info=context.error,
-    )
+    print("Telegram bot is running")
 
 
-# ============================================================
-# ЗАПУСК
-# ============================================================
+# =========================
+# ОСТАНОВКА БОТА
+# =========================
 
-def main():
+async def stop_bot():
 
-    if not BOT_TOKEN:
-        raise RuntimeError(
-            "BOT_TOKEN не указан."
-        )
+    global _bot_started
 
-    if BOT_TOKEN == "ВСТАВЬ_ТОКЕН_БОТА":
-        raise RuntimeError(
-            "Вставь токен Telegram-бота "
-            "в переменную BOT_TOKEN."
-        )
+    if not _bot_started:
+        return
 
-    application = (
-        Application.builder()
-        .token(BOT_TOKEN)
-        .build()
-    )
+    print("Stopping Telegram bot...")
 
-    # Команды
-    application.add_handler(
-        CommandHandler(
-            "start",
-            start,
-        )
-    )
+    await application.updater.stop()
 
-    application.add_handler(
-        CommandHandler(
-            "shop",
-            shop,
-        )
-    )
+    await application.stop()
 
-    application.add_handler(
-        CommandHandler(
-            "id",
-            user_id,
-        )
-    )
+    await application.shutdown()
 
-    application.add_handler(
-        CommandHandler(
-            "status",
-            status,
-        )
-    )
+    _bot_started = False
 
-    # Неизвестные команды
-    application.add_handler(
-        MessageHandler(
-            filters.COMMAND,
-            unknown_command,
-        )
-    )
-
-    # Обработчик ошибок
-    application.add_error_handler(
-        error_handler
-    )
-
-    logger.info(
-        "Telegram Stars Shop bot запускается..."
-    )
-
-    application.run_polling(
-        allowed_updates=Update.ALL_TYPES
-    )
+    print("Telegram bot stopped")
 
 
-# ============================================================
-# MAIN
-# ============================================================
+# =========================
+# ЛОКАЛЬНЫЙ ЗАПУСК
+# =========================
 
 if __name__ == "__main__":
-    main()
+    import asyncio
+
+    async def main():
+        await start_bot()
+
+        try:
+            while True:
+                await asyncio.sleep(3600)
+        except KeyboardInterrupt:
+            pass
+        finally:
+            await stop_bot()
+
+    asyncio.run(main())
